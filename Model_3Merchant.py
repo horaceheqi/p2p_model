@@ -22,6 +22,7 @@ class MF(object):
         self.woe = dict()
         self.iv = dict()
         self.filterIv = list()
+        self.version = ''
 
     # 模型评估
     @staticmethod
@@ -80,29 +81,36 @@ class MF(object):
     @staticmethod
     def var_once(data, var, times):
         print('%s: var_Once...' % times)
-        df = data.groupby(0)[var]
-        df_last = df.last().add_prefix(str(times) + '_last_')
-        df_first = df.first().add_prefix(str(times) + '_first_')
+        df = data.groupby('no')[var]
+        df_last = df.last().reset_index(drop=True).add_prefix(str(times) + '_last_')
+        df_first = df.first().reset_index(drop=True).add_prefix(str(times) + '_first_')
         return df_last, df_first
 
     @staticmethod
     def var_normal(data, var, times):
         print('%s: var_Normal...' % times)
-        df = data.groupby(0)[var]
-        df_mean = df.mean().round(3).add_prefix(str(times) + '_avg_')
-        df_max = df.max().round(3).add_prefix(str(times) + '_max_')
-        df_min = df.min().round(3).add_prefix(str(times) + '_min_')
-        df_sum = df.agg(lambda x: MF._sum(x)).add_prefix(str(times) + '_sum_')
+        df = data.groupby('no')[var]
+        df_mean = df.mean().reset_index(drop=True).round(3).add_prefix(str(times) + '_avg_')
+        df_max = df.max().reset_index(drop=True).round(3).add_prefix(str(times) + '_max_')
+        df_min = df.min().reset_index(drop=True).round(3).add_prefix(str(times) + '_min_')
+        df_sum = df.agg(lambda x: MF._sum(x)).reset_index(drop=True).add_prefix(str(times) + '_sum_')
         return df_mean, df_max, df_min, df_sum
 
     @staticmethod
     def var_max(data, var, times):
         print('%s: var_Max...' % times)
-        df = data.groupby(0)[var]
-        df_mean = df.mean().round(3).add_prefix(str(times) + '_avg_')
-        df_max = df.max().round(3).add_prefix(str(times) + '_max_')
-        df_min = df.min().round(3).add_prefix(str(times) + '_min_')
+        df = data.groupby('no')[var]
+        df_mean = df.mean().reset_index(drop=True).round(3).add_prefix(str(times) + '_avg_')
+        df_max = df.max().reset_index(drop=True).round(3).add_prefix(str(times) + '_max_')
+        df_min = df.min().reset_index(drop=True).round(3).add_prefix(str(times) + '_min_')
         return df_mean, df_max, df_min
+
+    @staticmethod
+    def var_overdue(data, var, times):
+        print('%s: var_Overdue...' % times)
+        df = data.groupby('no')[var]
+        df_yn = df.max().reset_index(drop=True).add_prefix(str(times) + '_YN_')
+        return df_yn
 
     # 采用best-ks进行分箱
     @staticmethod
@@ -131,8 +139,8 @@ class MF(object):
         list_.sort()
         n = 0
         for i in list_:
-            m = sum(df_[df_[0] <= i]) - n
-            n = sum(df_[df_[0] <= i])
+            m = df_[df_.iloc[:, 0] <= i].shape[0] - n
+            n = df_[df_.iloc[:, 0] <= i].shape[0]
             list_zone.append(m)
         list_zone.append(50000 - sum(list_zone))
         max_index = list_zone.index(max(list_zone))
@@ -239,7 +247,6 @@ class MF(object):
             return bins_, woe, res_iv
 
     # 特征提取
-    @staticmethod
     def get_var_v0(self, df_):
         print('Load data to extract v0 var...')
         print('df.shape:', df_.shape)
@@ -258,12 +265,12 @@ class MF(object):
         once_var = list(range(147, 169)) + list(range(175, 181)) + list(range(186, 191))
 
         ct_var_all = ct_amount_var + ct_count_var + list(range(169, 175)) + list(range(181, 186))
-        df_group = df_.groupby(df_['info'])
+        df_group = df_.groupby(df_['no'])
         rct_mth_12 = df_group.head(12)
         rct_mth_6 = df_group.head(6)
         rct_mth_3 = df_group.head(3)
-        rct_mth_1 = df_group.head(1)
-        df_1 = df_group.head(1).drop(['label'], axis=1).add_prefix(str(1) + '_')
+        rct_mth_1 = df_group.head(1).reset_index()
+        df_1 = rct_mth_1.head(1).drop(['label'], axis=1).reset_index(drop=True).add_prefix(str(1) + '_')
 
         times = time.time()
         print('Extract 12 features...')
@@ -291,38 +298,73 @@ class MF(object):
                               df_la_on_3, df_ea_on_3,
                               df_me_no_3, df_ma_no_3, df_mi_no_3, df_su_no_3,
                               df_me_ma_3, df_ma_ma_3, df_mi_ma_3, df_1], axis=1)
-        fin_data['info'] = rct_mth_1[0]
+
         print(fin_data.shape)
         fin_data['label'] = rct_mth_1['label']
+        fin_data.to_csv(self.Save_features, index=False)
 
     @staticmethod
-    def get_var_v1(self, df):
+    def get_var_v1(df_):
         print('Load data to extract v1 var...')
-        print('df.shape:', df.shape)
+        print('df.shape:', df_.shape)
+        # 老逾期变量衍生
+        print('Process data...')
+        ct_var = list(range(191, 196))
+        overdue_var = list(range(196, 200))
+        once_var = list(range(200, 214))
+        df_group = df_.groupby(df_['no'])
+        rct_mth_12 = df_group.head(12)
+        rct_mth_6 = df_group.head(6)
+        rct_mth_3 = df_group.head(3)
+        rct_mth_1 = df_group.head(1)
+        df_1 = rct_mth_1.drop(['m', 'label', ], axis=1).reset_index(drop=True).add_prefix(str(1) + '_')
+        df_1.rename(columns={'1_no': 'no'}, inplace=True)
+
+        times = time.time()
+        print('Extract 12 features...')
+        df_me_no_12, df_ma_no_12, df_mi_no_12, df_su_no_12 = MF.var_normal(rct_mth_12, ct_var, 12)
+        df_la_on_12, df_ea_on_12 = MF.var_once(rct_mth_12, once_var, 12)
+        df_yn_12 = MF.var_overdue(rct_mth_12, overdue_var, 12)
+
+        print('Extract 6 features...')
+        df_me_no_6, df_ma_no_6, df_mi_no_6, df_su_no_6 = MF.var_normal(rct_mth_6, ct_var, 6)
+        df_la_on_6, df_ea_on_6 = MF.var_once(rct_mth_6, once_var, 6)
+        df_yn_6 = MF.var_overdue(rct_mth_6, overdue_var, 6)
+
+        print('Extract 3 features...')
+        df_me_no_3, df_ma_no_3, df_mi_no_3, df_su_no_3 = MF.var_normal(rct_mth_3, ct_var, 3)
+        df_la_on_3, df_ea_on_3 = MF.var_once(rct_mth_3, once_var, 3)
+        df_yn_3 = MF.var_overdue(rct_mth_3, overdue_var, 3)
+
+        fin_data = pd.concat([df_me_no_12, df_ma_no_12, df_mi_no_12, df_su_no_12, df_la_on_12, df_ea_on_12, df_yn_12,
+                              df_me_no_6, df_ma_no_6, df_mi_no_6, df_su_no_6, df_la_on_6, df_ea_on_6, df_yn_6,
+                              df_me_no_3, df_ma_no_3, df_mi_no_3, df_su_no_3, df_la_on_3, df_ea_on_3, df_yn_3,
+                              df_1], axis=1)
+        print('Extract features finished...', time.time() - times)
+        print(fin_data.shape)
+        return fin_data
 
     @staticmethod
-    def get_var_v2(self, df):
+    def get_var_v2(df):
         print('Load data to extract v2 var...')
         print('df.shape:', df.shape)
 
     @staticmethod
-    def get_var_v3(self, df):
+    def get_var_v3(df):
         print('Load data to extract v3 var...')
         print('df.shape:', df.shape)
 
-    def get_var_v4(self, df):
+    def get_var_v4(self, df_):
         print('Load data to extract v4 var...')
-        df = pd.read_csv(self.Train_data)
-        df.columns = ['info'] + ['m'] + list(range(1, df.shape[1]-2)) + ['label'] + ['is_train']
-        print('df.shape:', df.shape)
-
+        df_.columns = ['no'] + ['m'] + list(range(1, df_.shape[1]-2)) + ['label'] + ['is_train']
+        print('df.shape:', df_.shape)
         print('Process data...')
         time_features = ['month', 10, 11]
         for var in time_features:
-            df[var].fillna('20190722', inplace=True)
-            df[var] = df[var].map(int)
-            df[var] = df[var].map(str)
-            df[var] = df[var].apply(lambda x: (self.Time - datetime.datetime.strptime(x, '%Y%m%d')).days)
+            df_[var].fillna('20190722', inplace=True)
+            df_[var] = df_[var].map(int)
+            df_[var] = df_[var].map(str)
+            df_[var] = df_[var].apply(lambda x: (self.Time - datetime.datetime.strptime(x, '%Y%m%d')).days)
 
         simple_extract_numerator = [[3, 4, 5, 6, 7, 8, 9], [20, 21, 22, 23, 24, 25, 26], [33, 34, 35, 36, 37, 38, 39],
                                     [18, 31], [19, 32], [30, 43], [20, 33], [21, 34], [22, 35], [23, 36]]
@@ -331,19 +373,19 @@ class MF(object):
         simple_extract_df = zip(simple_extract_numerator, simple_extract_denominator)
 
         times = time.time()
-        fin_data = MF.simple_extract(df, simple_extract_df)
+        fin_data = MF.simple_extract(df_, simple_extract_df)
         print('fin_data.shape', fin_data.shape)
         print('Extract features finished...', time.time() - times)
         fin_data.to_csv(self.Save_features, index=False)
 
-    def get_var_v5(self, df):
+    @staticmethod
+    def get_var_v5(df):
         print('Load data to extract v5 var...')
-        df = pd.read_csv(self.Train_data)
-        df.columns = ['info'] + ['m'] + list(range(1, df.shape[1]-2)) + ['label'] + ['is_train']
+        df.columns = ['no'] + ['m'] + list(range(1, df.shape[1]-2)) + ['label'] + ['is_train']
         print('df.shape:', df.shape)
 
     # 加载数据(未切分样本、标签)
-    def load_data(self, df):
+    def load_data(self):
         print('load features...')
         df = pd.read_csv(self.Save_features)
         print(df.shape)
@@ -357,7 +399,7 @@ class MF(object):
         print(df_.shape)
 
         train_label = df_['label']
-        train_columns = [x for x in df_.columns if x not in ['info', 'm', 'label']]
+        train_columns = [x for x in df_.columns if x not in ['no', 'm', 'label']]
         train_data = df_[train_columns]
         df_train_x, df_test_x, df_train_y, df_test_y = train_test_split(train_data, train_label, test_size=0.2, random_state=0)
         return df_train_x, df_test_x, df_train_y, df_test_y
@@ -366,7 +408,7 @@ class MF(object):
     def start_bin(self, trains_x, trains_y):
         train_ = pd.concat([trains_x, trains_y], axis=1)
         print('start bin...')
-        var_list = [var for var in train_.columns if var not in ['info', 'm', 'label']]
+        var_list = [var for var in train_.columns if var not in ['no', 'm', 'label']]
         total_bwi = dict()
         # 标准、逾期、多投变量中离散、连续定义
         overdue_feature = list(range(197, 201)) + list(range(206, 210)) + list(range(211, 215))
@@ -553,7 +595,7 @@ class MF(object):
         test_ = df_tests.reset_index(drop=True)
         label_train = train_['label']
         label_test = test_['label']
-        columns = [x for x in train_.columns if x not in ['info', 'month', 'label']]
+        columns = [x for x in train_.columns if x not in ['no', 'month', 'label']]
         train_ = train_[columns]
         test_ = test_[columns]
         '''
@@ -695,10 +737,16 @@ class MF(object):
     def start_lr(self):
         # 判断当前路径下是否存在该文件
         if not os.path.exists(self.Train_data):
-            print('检查原始数据文件')
+            print('请确认数据路径...')
+            sys.exit(0)
         # 判断是否有特征衍生数据
+        df = pd.read_csv(self.Train_data)
+        df.columns = ['no'] + ['m'] + list(range(1, df.shape[1] - 2)) + ['label']
+        df = df.sort_values(['no', 'm'], ascending=[1, 0])
+        cols = ['no'] + ['m'] + list(range(1, df.shape[1] - 2)) + ['label']
         if not os.path.exists(self.Save_features):
-            demo.get_var()
+            if self.version == 0:
+                demo.get_var_v0(df[cols])
         # 切分训练集和验证集
         train_x, test_x, train_y, test_y = demo.load_data()
         # 判断是否有分箱数据
@@ -714,15 +762,14 @@ class MF(object):
         if not os.path.exists(self.Train_data):
             print('请确认数据路径...')
             sys.exit(0)
-
         df = pd.read_csv(self.Train_data)
-        df.columns = ['info'] + ['m'] + list(range(1, df.shape[1] - 2)) + ['label'] + ['is_train']
-        df = df.sort_values(['info', 'm'], ascending=[1, 0])
-        cols = ['info'] + ['m'] + list(range(1, df.shape[1] - 2))
+        df.columns = ['no'] + ['m'] + list(range(1, df.shape[1]-2)) + ['label']
+        df = df.sort_values(['no', 'm'], ascending=[1, 0])
+        cols = ['no'] + ['m'] + list(range(1, df.shape[1] - 2)) + ['label']
         if not os.path.exists(self.Save_features):
-            version = int(input("请输入需要衍生的版本...(0:汇总、1:老逾期、2:新逾期、3:重构V1、4:重构V2、5:重构V3)"))
-            if version == 0:
+            if self.version == 0:
                 demo.get_var_v0(df[cols])
+            '''
             elif version == 1:
                 demo.get_var_v1(df[cols])
             elif version == 2:
@@ -736,7 +783,7 @@ class MF(object):
             else:
                 print("输入有误...程序终止")
                 sys.exit(0)
-
+            '''
         train_x, test_x, train_y, test_y = demo.load_data()
         demo.xgbt_train(train_x, test_x, train_y, test_y)
 
@@ -747,7 +794,8 @@ if __name__ == '__main__':
     bin_path = sys.argv[3]
     start = time.clock()
     demo = MF(data_path, feature_path, bin_path)
-    # demo.start_lr()
-    demo.start_xgbt()
+    MF.version = int(input("请输入需要衍生的版本...(0:汇总、1:老逾期、2:新逾期、3:重构V1、4:重构V2、5:重构V3) \n"))
+    demo.start_lr()
+    # demo.start_xgbt()
     end = time.clock()
     print("消耗时间：%f s" % (end - start))
